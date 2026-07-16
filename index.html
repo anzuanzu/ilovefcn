@@ -227,7 +227,7 @@
       </div>
       <div class="control">
         <label for="guaranteedPeriods">Guaranteed Periods (m)</label>
-        <input id="guaranteedPeriods" type="number" inputmode="numeric" min="0" step="1" value="3" />
+        <input id="guaranteedPeriods" type="number" inputmode="numeric" min="0" step="1" value="1" />
       </div>
       <div class="control">
         <label for="tenor">Tenor (m)</label>
@@ -404,7 +404,7 @@
     function renderRows(combos) {
       const tbody = $('tableBody');
       tbody.innerHTML = '';
-      const gp = $('guaranteedPeriods').value || '3';
+      const gp = $('guaranteedPeriods').value || '1';
       const tenor = $('tenor').value || '3';
       const koBarrier = formatPercent($('koBarrier').value || '100');
       const strike = formatPercent($('strike').value || '70');
@@ -773,7 +773,7 @@
       kiBarrier: { column: 15, format: 'percent', fallback: '60' },
       strike: { column: 12, format: 'percent', fallback: '70' },
       koBarrier: { column: 10, format: 'percent', fallback: '100' },
-      guaranteedPeriods: { column: 3, format: 'plain', fallback: '3' },
+      guaranteedPeriods: { column: 3, format: 'plain', fallback: '1' },
       tenor: { column: 8, format: 'plain', fallback: '3' }
     };
 
