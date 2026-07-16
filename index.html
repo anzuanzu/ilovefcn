@@ -370,16 +370,9 @@
     }
 
     function randomCombos(codes, count = 10) {
-      const combos = shuffle(allTriplets(codes));
-      const result = [];
-      for (let i = 0; i < count; i++) {
-        if (combos.length > i) {
-          result.push(shuffle(combos[i]));
-        } else {
-          result.push(shuffle(codes).slice(0, 3));
-        }
-      }
-      return result;
+      return shuffle(allTriplets(codes))
+        .slice(0, count)
+        .map(combo => shuffle(combo));
     }
 
     function td(text, cls = 'white', editable = false) {
