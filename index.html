@@ -36,7 +36,7 @@
     }
     .controls {
       display: grid;
-      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
       gap: 12px;
       margin-bottom: 14px;
       padding: 16px;
@@ -55,7 +55,7 @@
       font-weight: 700;
       color: #243651;
     }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       font: inherit;
       border: 1px solid #b8bfca;
@@ -87,6 +87,19 @@
       font-weight: 700;
       color: #243651;
     }
+    .page-heading {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .page-heading h1 { margin: 0; }
+    .return-btn {
+      background: #6b7280;
+      white-space: nowrap;
+    }
+    .return-btn:hover { background: #4b5563; }
     textarea {
       min-height: 76px;
       resize: vertical;
@@ -117,6 +130,13 @@
       font-size: 12px;
       color: #5a6474;
       line-height: 1.45;
+    }
+    .combination-status {
+      min-height: 18px;
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: #304769;
+      font-weight: 700;
     }
     .table-wrap {
       overflow-x: auto;
@@ -210,7 +230,10 @@
 </head>
 <body>
   <main class="app">
-    <h1>FCN 條件表產生器</h1>
+    <div class="page-heading">
+      <h1>FCN 詢價系統</h1>
+      <button type="button" class="return-btn" id="returnBtn">← 返回標的雷達</button>
+    </div>
 
     <section class="controls" aria-label="可調整欄位">
       <div class="control">
@@ -233,13 +256,22 @@
         <label for="tenor">Tenor (m)</label>
         <input id="tenor" type="number" inputmode="numeric" min="1" step="1" value="3" />
       </div>
+      <div class="control">
+        <label for="comboSize">每組股票數</label>
+        <select id="comboSize">
+          <option value="3" selected>3 檔組合</option>
+          <option value="2">2 檔組合</option>
+          <option value="1">單一個股</option>
+        </select>
+      </div>
     </section>
 
     <section class="stock-panel" aria-label="股票代碼輸入">
       <div>
         <label for="stockCodes">股票代碼（最多 20 檔，可用逗號、空格或換行分隔）</label>
         <textarea id="stockCodes" maxlength="400" spellcheck="false">MSFT TSLA NVDA AAPL AMZN META GOOGL AMD NFLX AVGO</textarea>
-        <p class="hint">按「隨機產生十組」後，會從輸入代碼中每組抽出 3 檔股票，填入 BBG Code 1、BBG Code 2、BBG Code 3。表格產生後，可直接點選有數字或股票代碼的儲存格手動修改，匯出 PNG、CSV、XLSX 會使用畫面上的最新內容。</p>
+        <p class="hint" id="comboHint">按「隨機產生十組」後，會從輸入代碼中每組抽出 3 檔不重複股票，填入 BBG Code 1、BBG Code 2、BBG Code 3。表格產生後，可直接點選有數字或股票代碼的儲存格手動修改，匯出 PNG、CSV、XLSX 會使用畫面上的最新內容。</p>
+        <p class="combination-status" id="combinationStatus" aria-live="polite"></p>
       </div>
       <div class="actions">
         <button type="button" id="generateBtn">隨機產生十組</button>
@@ -357,20 +389,23 @@
       return a;
     }
 
-    function allTriplets(codes) {
+    function allCombinations(codes, size) {
       const out = [];
-      for (let i = 0; i < codes.length - 2; i++) {
-        for (let j = i + 1; j < codes.length - 1; j++) {
-          for (let k = j + 1; k < codes.length; k++) {
-            out.push([codes[i], codes[j], codes[k]]);
-          }
+      function build(start, combo) {
+        if (combo.length === size) {
+          out.push(combo);
+          return;
+        }
+        for (let i = start; i <= codes.length - (size - combo.length); i++) {
+          build(i + 1, combo.concat(codes[i]));
         }
       }
+      build(0, []);
       return out;
     }
 
-    function randomCombos(codes, count = 10) {
-      return shuffle(allTriplets(codes))
+    function randomCombos(codes, size, count = 10) {
+      return shuffle(allCombinations(codes, size))
         .slice(0, count)
         .map(combo => shuffle(combo));
     }
@@ -430,11 +465,27 @@
 
     function generate() {
       const codes = parseCodes();
-      if (codes.length < 3) {
-        alert('請至少輸入 3 檔股票代碼。');
+      const size = Number($('comboSize').value);
+      if (codes.length < size) {
+        alert(`請至少輸入 ${size} 檔股票代碼。`);
         return;
       }
-      renderRows(randomCombos(codes, 10));
+      const combos = randomCombos(codes, size, 10);
+      renderRows(combos);
+      const total = allCombinations(codes, size).length;
+      $('combinationStatus').textContent = total > combos.length
+        ? `已隨機產生 ${combos.length} 組（共 ${total} 種不重複組合）`
+        : `已產生全部 ${combos.length} 組不重複組合`;
+    }
+
+    function updateCombinationCopy() {
+      const size = Number($('comboSize').value);
+      const labels = { 1: '單一個股', 2: '2 檔', 3: '3 檔' };
+      $('generateBtn').textContent = `隨機產生十組（${labels[size]}）`;
+      $('comboHint').textContent = size === 1
+        ? '按產生後，會從輸入代碼中隨機列出單一個股。每檔股票只會出現一次；不足十檔時會列出全部可用個股。'
+        : `按產生後，會從輸入代碼中每組抽出 ${size} 檔不重複股票。組合之間不會重複；不足十組時會列出全部可用組合。`;
+      generate();
     }
 
     async function exportPng() {
@@ -778,12 +829,33 @@
       });
     });
 
+    const DEFAULT_RETURN_URL = 'https://anzuanzu.github.io/fcneliAI/';
+
+    function initializeFromQuery() {
+      const url = new URL(window.location.href);
+      const tickers = (url.searchParams.get('tickers') || '')
+        .split(',').map(value => value.trim().toUpperCase()).filter(Boolean);
+      if (tickers.length) $('stockCodes').value = [...new Set(tickers)].join(' ');
+
+      let returnUrl = DEFAULT_RETURN_URL;
+      try {
+        const candidate = new URL(url.searchParams.get('returnUrl') || DEFAULT_RETURN_URL);
+        if (candidate.origin === 'https://anzuanzu.github.io' && candidate.pathname.startsWith('/fcneliAI/')) {
+          returnUrl = candidate.toString();
+        }
+      } catch (error) { }
+
+      $('returnBtn').addEventListener('click', () => { window.location.href = returnUrl; });
+    }
+
     $('generateBtn').addEventListener('click', generate);
+    $('comboSize').addEventListener('change', updateCombinationCopy);
     $('exportBtn').addEventListener('click', exportPng);
     $('exportCsvBtn').addEventListener('click', exportCsv);
     $('exportXlsxBtn').addEventListener('click', exportXlsx);
 
-    generate();
+    initializeFromQuery();
+    updateCombinationCopy();
   </script>
 </body>
 </html>
