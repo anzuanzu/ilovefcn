@@ -217,7 +217,18 @@
       outline-offset: -2px;
       background: #fff;
     }
+    table.fcn .export-select {
+      width: 48px;
+      padding: 4px;
+    }
+    table.fcn .export-select input {
+      width: auto;
+      margin: 0;
+      cursor: pointer;
+      accent-color: #304769;
+    }
 
+    .w-select { width: 48px; }
     .w-product { width: 58px; }
     .w-issue { width: 114px; }
     .w-currency { width: 60px; }
@@ -290,11 +301,12 @@
       <div>
         <label for="stockCodes">股票代碼（最多 20 檔，可用逗號、空格或換行分隔）</label>
         <textarea id="stockCodes" maxlength="400" spellcheck="false">MSFT TSLA NVDA AAPL AMZN META GOOGL AMD NFLX AVGO</textarea>
-        <p class="hint" id="comboHint">按「隨機產生十組」後，會從輸入代碼中每組抽出 3 檔不重複股票，填入 BBG Code 1、BBG Code 2、BBG Code 3。表格產生後，可直接點選有數字或股票代碼的儲存格手動修改，匯出 PNG、CSV、XLSX 會使用畫面上的最新內容。</p>
+        <p class="hint" id="comboHint">按「隨機產生 30 組」後，會從輸入代碼中每組抽出不重複股票。表格產生後，可勾選要匯出的組合，並可直接點選有數字或股票代碼的儲存格手動修改。</p>
         <p class="combination-status" id="combinationStatus" aria-live="polite"></p>
+        <p class="combination-status" id="exportSelectionStatus" aria-live="polite"></p>
       </div>
       <div class="actions">
-        <button type="button" id="generateBtn">隨機產生十組</button>
+        <button type="button" id="generateBtn">隨機產生 30 組</button>
         <button type="button" id="exportBtn">匯出 PNG 圖檔</button>
         <button type="button" id="exportCsvBtn">匯出 CSV 檔</button>
         <button type="button" id="exportXlsxBtn">匯出 XLSX 檔</button>
@@ -305,6 +317,7 @@
       <div id="exportArea">
         <table class="fcn" id="fcnTable" aria-label="FCN 條件表">
           <colgroup>
+            <col class="w-select" />
             <col class="w-product" />
             <col class="w-issue" />
             <col class="w-currency" />
@@ -327,6 +340,7 @@
           </colgroup>
           <thead>
             <tr>
+              <th class="export-select" rowspan="2" title="全選或取消全部匯出組合"><input type="checkbox" id="selectAllCombos" checked aria-label="全選匯出組合"></th>
               <th colspan="2">-</th>
               <th>(1)</th>
               <th>(2)-</th>
@@ -368,6 +382,8 @@
   </main>
 
   <script>
+    const MAX_COMBOS = 30;
+
     const fixed = {
       product: 'FCN',
       issueDate: '7',
@@ -443,12 +459,22 @@
     }
 
     function allSelectedCombinations(codes, sizes) {
-      return sizes
+      return uniqueCombinations(sizes
         .filter(size => codes.length >= size)
-        .flatMap(size => allCombinations(codes, size));
+        .flatMap(size => allCombinations(codes, size)));
     }
 
-    function randomCombos(codes, sizes, count = 10) {
+    function uniqueCombinations(combos) {
+      const seen = new Set();
+      return combos.filter(combo => {
+        const key = combo.slice().sort().join('\u001f');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function randomCombos(codes, sizes, count = MAX_COMBOS) {
       return shuffle(allSelectedCombinations(codes, sizes))
         .slice(0, count)
         .map(combo => shuffle(combo));
@@ -482,8 +508,18 @@
       const strike = formatPercent($('strike').value || '70');
       const kiBarrier = formatPercent($('kiBarrier').value || '60');
 
-      combos.forEach(combo => {
+      combos.forEach((combo, index) => {
         const tr = document.createElement('tr');
+        tr.dataset.comboIndex = String(index);
+        const selectionCell = document.createElement('td');
+        selectionCell.className = 'export-select';
+        const selectionCheckbox = document.createElement('input');
+        selectionCheckbox.type = 'checkbox';
+        selectionCheckbox.checked = true;
+        selectionCheckbox.setAttribute('aria-label', `選取第 ${index + 1} 組匯出`);
+        selectionCheckbox.addEventListener('change', updateExportSelectionStatus);
+        selectionCell.appendChild(selectionCheckbox);
+        tr.appendChild(selectionCell);
         tr.appendChild(td(fixed.product, 'gray'));
         tr.appendChild(td(fixed.issueDate, 'gray', true));
         tr.appendChild(td(fixed.currency, 'white'));
@@ -505,6 +541,32 @@
         tr.appendChild(td('', 'gray', true));
         tbody.appendChild(tr);
       });
+      updateExportSelectionStatus();
+    }
+
+    function selectedComboRows() {
+      return [...$('tableBody').querySelectorAll('tr')].filter(row => {
+        const checkbox = row.querySelector('.export-select input[type="checkbox"]');
+        return checkbox && checkbox.checked;
+      });
+    }
+
+    function updateExportSelectionStatus() {
+      const total = $('tableBody').querySelectorAll('tr').length;
+      const selected = selectedComboRows().length;
+      const selectAll = $('selectAllCombos');
+      selectAll.checked = total > 0 && selected === total;
+      selectAll.indeterminate = selected > 0 && selected < total;
+      $('exportSelectionStatus').textContent = total
+        ? `已勾選 ${selected} / ${total} 組供匯出`
+        : '尚未產生可匯出的組合';
+      ['exportBtn', 'exportCsvBtn', 'exportXlsxBtn'].forEach(id => { $(id).disabled = selected === 0; });
+    }
+
+    function ensureExportSelection() {
+      if (selectedComboRows().length) return true;
+      alert('請至少勾選一組再匯出。');
+      return false;
     }
 
     function generate() {
@@ -519,7 +581,7 @@
         alert(`目前只有 ${codes.length} 檔股票，無法產生已勾選的組合。`);
         return;
       }
-      const combos = randomCombos(codes, validSizes, 10);
+      const combos = randomCombos(codes, validSizes, MAX_COMBOS);
       renderRows(combos);
       const total = allSelectedCombinations(codes, validSizes).length;
       const skippedSizes = sizes.filter(size => !validSizes.includes(size));
@@ -536,10 +598,10 @@
         : (sizes.length === 3 ? '全部組合' : comboSizeLabel(sizes));
       const codes = parseCodes();
       const validSizes = sizes.filter(size => codes.length >= size);
-      $('generateBtn').textContent = `隨機產生十組（${selectedLabel}）`;
+      $('generateBtn').textContent = `隨機產生 ${MAX_COMBOS} 組（${selectedLabel}）`;
       $('comboHint').textContent = !sizes.length
         ? '請至少勾選一種股票組合。'
-        : `按產生後，會混合已勾選的 ${selectedLabel}，每組股票不重複，且不會產生重複組合；總數不足十組時會列出全部可用組合。`;
+        : `按產生後，會混合已勾選的 ${selectedLabel}，每組股票不重複，且不會產生重複組合；最多產生 ${MAX_COMBOS} 組，不足時會列出全部可用組合。`;
       if (validSizes.length) {
         generate();
       } else {
@@ -547,53 +609,92 @@
         $('combinationStatus').textContent = !sizes.length
           ? '請至少勾選一種股票組合。'
           : `目前只有 ${codes.length} 檔股票，請勾選可用的組合或補足股票代碼。`;
+        updateExportSelectionStatus();
       }
     }
 
-    async function exportPng() {
-      const area = $('exportArea');
-      const width = area.scrollWidth;
-      const height = area.scrollHeight;
-      const css = document.querySelector('style').textContent;
-      const xhtml = `
-        <div xmlns="http://www.w3.org/1999/xhtml">
-          <style>${css}</style>
-          ${area.outerHTML}
-        </div>`;
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-          <foreignObject width="100%" height="100%">${xhtml}</foreignObject>
-        </svg>`;
-      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
+    function drawPngCellText(ctx, text, x, y, width, height, color, isHeader) {
+      const words = String(text || '').split(/\s+/).filter(Boolean);
+      const maxWidth = Math.max(10, width - 8);
+      const lines = [];
+      let line = '';
+      words.forEach(word => {
+        const next = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(next).width > maxWidth) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      });
+      if (line) lines.push(line);
+      const lineHeight = isHeader ? 13 : 12;
+      const visibleLines = lines.slice(0, Math.max(1, Math.floor((height - 4) / lineHeight)));
+      const startY = y + (height - visibleLines.length * lineHeight) / 2 + lineHeight * 0.76;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      visibleLines.forEach((lineText, index) => {
+        ctx.fillText(lineText, x + width / 2, startY + index * lineHeight, maxWidth);
+      });
+    }
 
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const scale = Math.max(2, window.devicePixelRatio || 1);
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(scale, scale);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-        URL.revokeObjectURL(url);
-        const a = document.createElement('a');
-        const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-        a.href = canvas.toDataURL('image/png');
-        a.download = `FCN_table_${stamp}.png`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      };
+    function exportPng() {
+      if (!ensureExportSelection()) return;
+      const { rows, merges } = collectTableData();
+      const widths = [58, 114, 60, 78, 76, 76, 76, 76, 74, 114, 75, 106, 87, 94, 76, 76, 80, 77, 75];
+      const heights = rows.map((_, index) => index === 0 ? 31 : (index === 1 ? 68 : 24));
+      const xPositions = widths.reduce((positions, width) => positions.concat(positions[positions.length - 1] + width), [0]);
+      const yPositions = heights.reduce((positions, height) => positions.concat(positions[positions.length - 1] + height), [0]);
+      const width = xPositions[xPositions.length - 1];
+      const height = yPositions[yPositions.length - 1];
+      const scale = Math.max(2, window.devicePixelRatio || 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.font = '10px Arial, sans-serif';
 
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        alert('匯出失敗，請改用 Chrome 或 Edge 瀏覽器再試一次。');
-      };
+      const mergedCells = new Set();
+      merges.forEach(merge => {
+        for (let row = merge.startRow; row <= merge.endRow; row++) {
+          for (let col = merge.startCol; col <= merge.endCol; col++) mergedCells.add(`${row}:${col}`);
+        }
+      });
 
-      img.src = url;
+      function drawCell(cell, row, col, endRow = row, endCol = col) {
+        const isHeader = row < 2;
+        const background = cell.style === 3 ? '#cfcaca' : (isHeader ? '#4f6288' : '#ffffff');
+        const color = cell.style === 2 ? '#fff200' : (isHeader ? '#ffffff' : '#111111');
+        const x = xPositions[col];
+        const y = yPositions[row];
+        const cellWidth = xPositions[endCol + 1] - x;
+        const cellHeight = yPositions[endRow + 1] - y;
+        ctx.fillStyle = background;
+        ctx.fillRect(x, y, cellWidth, cellHeight);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, cellWidth - 1, cellHeight - 1);
+        ctx.font = `${cell.style === 2 ? '700' : '400'} 10px Arial, sans-serif`;
+        drawPngCellText(ctx, cell.text, x, y, cellWidth, cellHeight, color, isHeader);
+      }
+
+      rows.forEach((row, rowIndex) => {
+        row.cells.forEach((cell, colIndex) => {
+          if (!mergedCells.has(`${rowIndex}:${colIndex}`)) drawCell(cell, rowIndex, colIndex);
+        });
+      });
+      merges.forEach(merge => drawCell(rows[merge.startRow].cells[merge.startCol], merge.startRow, merge.startCol, merge.endRow, merge.endCol));
+
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `FCN_table_${timestamp()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
 
 
@@ -638,13 +739,16 @@
     }
 
     function collectTableData() {
-      const table = $('fcnTable');
+      const rowsToExport = [
+        ...$('fcnTable').querySelectorAll('thead tr'),
+        ...selectedComboRows()
+      ];
       const rows = [];
       const merges = [];
-      [...table.querySelectorAll('tr')].forEach((tr, rowIndex) => {
+      rowsToExport.forEach((tr, rowIndex) => {
         const cells = [];
         let colIndex = 0;
-        [...tr.children].forEach(cell => {
+        [...tr.children].filter(cell => !cell.classList.contains('export-select')).forEach(cell => {
           while (cells[colIndex]) colIndex += 1;
           const colspan = Number(cell.colSpan || 1);
           const rowspan = Number(cell.rowSpan || 1);
@@ -676,6 +780,7 @@
     }
 
     function exportCsv() {
+      if (!ensureExportSelection()) return;
       const { rows } = collectTableData();
       const csv = rows.map(row => row.cells.map(cell => csvEscape(cell.text)).join(',')).join('\r\n');
       downloadBlob(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' }), `FCN_table_${timestamp()}.csv`);
@@ -822,6 +927,7 @@
     }
 
     function exportXlsx() {
+      if (!ensureExportSelection()) return;
       const { rows, merges } = collectTableData();
       const created = new Date().toISOString();
       const files = [
@@ -871,7 +977,7 @@
         return;
       }
       rows.forEach(row => {
-        if (row.children[columnIndex]) row.children[columnIndex].textContent = value;
+        if (row.children[columnIndex + 1]) row.children[columnIndex + 1].textContent = value;
       });
     }
 
@@ -915,6 +1021,13 @@
     }
 
     $('generateBtn').addEventListener('click', generate);
+    $('selectAllCombos').addEventListener('change', () => {
+      const checked = $('selectAllCombos').checked;
+      $('tableBody').querySelectorAll('.export-select input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = checked;
+      });
+      updateExportSelectionStatus();
+    });
     $('comboSizeAll').addEventListener('change', () => {
       const checked = $('comboSizeAll').checked;
       [3, 2, 1].forEach(size => { $('comboSize' + size).checked = checked; });
