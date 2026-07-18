@@ -485,7 +485,12 @@
       $('comboHint').textContent = size === 1
         ? '按產生後，會從輸入代碼中隨機列出單一個股。每檔股票只會出現一次；不足十檔時會列出全部可用個股。'
         : `按產生後，會從輸入代碼中每組抽出 ${size} 檔不重複股票。組合之間不會重複；不足十組時會列出全部可用組合。`;
-      generate();
+      if (parseCodes().length >= size) {
+        generate();
+      } else {
+        $('tableBody').innerHTML = '';
+        $('combinationStatus').textContent = `目前只有 ${parseCodes().length} 檔股票，請選擇 ${parseCodes().length || 1} 檔組合或補足股票代碼。`;
+      }
     }
 
     async function exportPng() {
@@ -835,7 +840,11 @@
       const url = new URL(window.location.href);
       const tickers = (url.searchParams.get('tickers') || '')
         .split(',').map(value => value.trim().toUpperCase()).filter(Boolean);
-      if (tickers.length) $('stockCodes').value = [...new Set(tickers)].join(' ');
+      if (tickers.length) {
+        const uniqueTickers = [...new Set(tickers)];
+        $('stockCodes').value = uniqueTickers.join(' ');
+        $('comboSize').value = String(Math.min(3, uniqueTickers.length));
+      }
 
       let returnUrl = DEFAULT_RETURN_URL;
       try {
