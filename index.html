@@ -55,6 +55,25 @@
       font-weight: 700;
       color: #243651;
     }
+    .combo-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid #b8bfca;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .combo-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #304769;
+      white-space: nowrap;
+    }
+    .combo-option input { width: auto; margin: 0; }
     input, textarea, select {
       width: 100%;
       font: inherit;
@@ -257,12 +276,13 @@
         <input id="tenor" type="number" inputmode="numeric" min="1" step="1" value="3" />
       </div>
       <div class="control">
-        <label for="comboSize">每組股票數</label>
-        <select id="comboSize">
-          <option value="3" selected>3 檔組合</option>
-          <option value="2">2 檔組合</option>
-          <option value="1">單一個股</option>
-        </select>
+        <label>每組股票數</label>
+        <div class="combo-options" aria-label="股票組合類型">
+          <label class="combo-option"><input type="checkbox" id="comboSizeAll" checked> 全部組合</label>
+          <label class="combo-option"><input type="checkbox" id="comboSize3" checked> 3 檔</label>
+          <label class="combo-option"><input type="checkbox" id="comboSize2" checked> 2 檔</label>
+          <label class="combo-option"><input type="checkbox" id="comboSize1" checked> 單一</label>
+        </div>
       </div>
     </section>
 
@@ -404,8 +424,32 @@
       return out;
     }
 
-    function randomCombos(codes, size, count = 10) {
-      return shuffle(allCombinations(codes, size))
+    function selectedComboSizes() {
+      return [3, 2, 1].filter(size => $('comboSize' + size).checked);
+    }
+
+    function syncAllComboCheckbox() {
+      $('comboSizeAll').checked = [3, 2, 1].every(size => $('comboSize' + size).checked);
+    }
+
+    function setComboSizes(sizes) {
+      [3, 2, 1].forEach(size => { $('comboSize' + size).checked = sizes.includes(size); });
+      syncAllComboCheckbox();
+    }
+
+    function comboSizeLabel(sizes) {
+      const labels = { 1: '單一個股', 2: '2 檔', 3: '3 檔' };
+      return sizes.map(size => labels[size]).join('、');
+    }
+
+    function allSelectedCombinations(codes, sizes) {
+      return sizes
+        .filter(size => codes.length >= size)
+        .flatMap(size => allCombinations(codes, size));
+    }
+
+    function randomCombos(codes, sizes, count = 10) {
+      return shuffle(allSelectedCombinations(codes, sizes))
         .slice(0, count)
         .map(combo => shuffle(combo));
     }
@@ -465,31 +509,44 @@
 
     function generate() {
       const codes = parseCodes();
-      const size = Number($('comboSize').value);
-      if (codes.length < size) {
-        alert(`請至少輸入 ${size} 檔股票代碼。`);
+      const sizes = selectedComboSizes();
+      if (!sizes.length) {
+        alert('請至少勾選一種股票組合。');
         return;
       }
-      const combos = randomCombos(codes, size, 10);
+      const validSizes = sizes.filter(size => codes.length >= size);
+      if (!validSizes.length) {
+        alert(`目前只有 ${codes.length} 檔股票，無法產生已勾選的組合。`);
+        return;
+      }
+      const combos = randomCombos(codes, validSizes, 10);
       renderRows(combos);
-      const total = allCombinations(codes, size).length;
+      const total = allSelectedCombinations(codes, validSizes).length;
+      const skippedSizes = sizes.filter(size => !validSizes.includes(size));
+      const skipped = skippedSizes.length ? `；已略過需更多股票的 ${comboSizeLabel(skippedSizes)}` : '';
       $('combinationStatus').textContent = total > combos.length
-        ? `已隨機產生 ${combos.length} 組（共 ${total} 種不重複組合）`
-        : `已產生全部 ${combos.length} 組不重複組合`;
+        ? `已隨機產生 ${combos.length} 組（共 ${total} 種不重複組合）${skipped}`
+        : `已產生全部 ${combos.length} 組不重複組合${skipped}`;
     }
 
     function updateCombinationCopy() {
-      const size = Number($('comboSize').value);
-      const labels = { 1: '單一個股', 2: '2 檔', 3: '3 檔' };
-      $('generateBtn').textContent = `隨機產生十組（${labels[size]}）`;
-      $('comboHint').textContent = size === 1
-        ? '按產生後，會從輸入代碼中隨機列出單一個股。每檔股票只會出現一次；不足十檔時會列出全部可用個股。'
-        : `按產生後，會從輸入代碼中每組抽出 ${size} 檔不重複股票。組合之間不會重複；不足十組時會列出全部可用組合。`;
-      if (parseCodes().length >= size) {
+      const sizes = selectedComboSizes();
+      const selectedLabel = !sizes.length
+        ? '尚未選擇'
+        : (sizes.length === 3 ? '全部組合' : comboSizeLabel(sizes));
+      const codes = parseCodes();
+      const validSizes = sizes.filter(size => codes.length >= size);
+      $('generateBtn').textContent = `隨機產生十組（${selectedLabel}）`;
+      $('comboHint').textContent = !sizes.length
+        ? '請至少勾選一種股票組合。'
+        : `按產生後，會混合已勾選的 ${selectedLabel}，每組股票不重複，且不會產生重複組合；總數不足十組時會列出全部可用組合。`;
+      if (validSizes.length) {
         generate();
       } else {
         $('tableBody').innerHTML = '';
-        $('combinationStatus').textContent = `目前只有 ${parseCodes().length} 檔股票，請選擇 ${parseCodes().length || 1} 檔組合或補足股票代碼。`;
+        $('combinationStatus').textContent = !sizes.length
+          ? '請至少勾選一種股票組合。'
+          : `目前只有 ${codes.length} 檔股票，請勾選可用的組合或補足股票代碼。`;
       }
     }
 
@@ -843,7 +900,7 @@
       if (tickers.length) {
         const uniqueTickers = [...new Set(tickers)];
         $('stockCodes').value = uniqueTickers.join(' ');
-        $('comboSize').value = String(Math.min(3, uniqueTickers.length));
+        setComboSizes([Math.min(3, uniqueTickers.length)]);
       }
 
       let returnUrl = DEFAULT_RETURN_URL;
@@ -858,7 +915,17 @@
     }
 
     $('generateBtn').addEventListener('click', generate);
-    $('comboSize').addEventListener('change', updateCombinationCopy);
+    $('comboSizeAll').addEventListener('change', () => {
+      const checked = $('comboSizeAll').checked;
+      [3, 2, 1].forEach(size => { $('comboSize' + size).checked = checked; });
+      updateCombinationCopy();
+    });
+    [3, 2, 1].forEach(size => {
+      $('comboSize' + size).addEventListener('change', () => {
+        syncAllComboCheckbox();
+        updateCombinationCopy();
+      });
+    });
     $('exportBtn').addEventListener('click', exportPng);
     $('exportCsvBtn').addEventListener('click', exportCsv);
     $('exportXlsxBtn').addEventListener('click', exportXlsx);
